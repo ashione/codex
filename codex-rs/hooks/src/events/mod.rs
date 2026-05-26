@@ -1,8 +1,10 @@
 pub(crate) mod common;
 pub mod compact;
 pub mod permission_request;
+pub mod plan_lifecycle;
 pub mod post_tool_use;
 pub mod pre_tool_use;
 pub mod session_start;
 pub mod stop;
+pub mod task_lifecycle;
 pub mod user_prompt_submit;

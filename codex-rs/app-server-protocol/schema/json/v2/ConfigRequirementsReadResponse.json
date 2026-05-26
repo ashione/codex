@@ -261,6 +261,24 @@
           },
           "type": "array"
         },
+        "PlanCompleted": {
+          "items": {
+            "$ref": "#/definitions/ConfiguredHookMatcherGroup"
+          },
+          "type": "array"
+        },
+        "PlanCreated": {
+          "items": {
+            "$ref": "#/definitions/ConfiguredHookMatcherGroup"
+          },
+          "type": "array"
+        },
+        "PlanUpdated": {
+          "items": {
+            "$ref": "#/definitions/ConfiguredHookMatcherGroup"
+          },
+          "type": "array"
+        },
         "PostCompact": {
           "items": {
             "$ref": "#/definitions/ConfiguredHookMatcherGroup"
@@ -309,6 +327,18 @@
           },
           "type": "array"
         },
+        "TaskCompleted": {
+          "items": {
+            "$ref": "#/definitions/ConfiguredHookMatcherGroup"
+          },
+          "type": "array"
+        },
+        "TaskCreated": {
+          "items": {
+            "$ref": "#/definitions/ConfiguredHookMatcherGroup"
+          },
+          "type": "array"
+        },
         "UserPromptSubmit": {
           "items": {
             "$ref": "#/definitions/ConfiguredHookMatcherGroup"
@@ -330,6 +360,9 @@
       },
       "required": [
         "PermissionRequest",
+        "PlanCompleted",
+        "PlanCreated",
+        "PlanUpdated",
         "PostCompact",
         "PostToolUse",
         "PreCompact",
@@ -338,6 +371,8 @@
         "Stop",
         "SubagentStart",
         "SubagentStop",
+        "TaskCompleted",
+        "TaskCreated",
         "UserPromptSubmit"
       ],
       "type": "object"

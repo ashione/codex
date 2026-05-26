@@ -10,6 +10,8 @@ use crate::events::compact::PreCompactRequest;
 use crate::events::compact::StatelessHookOutcome;
 use crate::events::permission_request::PermissionRequestOutcome;
 use crate::events::permission_request::PermissionRequestRequest;
+use crate::events::plan_lifecycle::PlanLifecycleOutcome;
+use crate::events::plan_lifecycle::PlanLifecycleRequest;
 use crate::events::post_tool_use::PostToolUseOutcome;
 use crate::events::post_tool_use::PostToolUseRequest;
 use crate::events::pre_tool_use::PreToolUseOutcome;
@@ -18,6 +20,8 @@ use crate::events::session_start::SessionStartOutcome;
 use crate::events::session_start::SessionStartRequest;
 use crate::events::stop::StopOutcome;
 use crate::events::stop::StopRequest;
+use crate::events::task_lifecycle::TaskLifecycleOutcome;
+use crate::events::task_lifecycle::TaskLifecycleRequest;
 use crate::events::user_prompt_submit::UserPromptSubmitOutcome;
 use crate::events::user_prompt_submit::UserPromptSubmitRequest;
 use crate::output_spill::HookOutputSpiller;
@@ -72,6 +76,11 @@ impl ConfiguredHandler {
             codex_protocol::protocol::HookEventName::UserPromptSubmit => "user-prompt-submit",
             codex_protocol::protocol::HookEventName::SubagentStart => "subagent-start",
             codex_protocol::protocol::HookEventName::SubagentStop => "subagent-stop",
+            codex_protocol::protocol::HookEventName::TaskCreated => "task-created",
+            codex_protocol::protocol::HookEventName::TaskCompleted => "task-completed",
+            codex_protocol::protocol::HookEventName::PlanCreated => "plan-created",
+            codex_protocol::protocol::HookEventName::PlanUpdated => "plan-updated",
+            codex_protocol::protocol::HookEventName::PlanCompleted => "plan-completed",
             codex_protocol::protocol::HookEventName::Stop => "stop",
         }
     }
@@ -230,6 +239,34 @@ impl ClaudeHooksEngine {
         request: PostCompactRequest,
     ) -> StatelessHookOutcome {
         crate::events::compact::run_post(&self.handlers, &self.shell, request).await
+    }
+
+    pub(crate) fn preview_task_lifecycle(
+        &self,
+        request: &TaskLifecycleRequest,
+    ) -> Vec<HookRunSummary> {
+        crate::events::task_lifecycle::preview(&self.handlers, request)
+    }
+
+    pub(crate) async fn run_task_lifecycle(
+        &self,
+        request: TaskLifecycleRequest,
+    ) -> TaskLifecycleOutcome {
+        crate::events::task_lifecycle::run(&self.handlers, &self.shell, request).await
+    }
+
+    pub(crate) fn preview_plan_lifecycle(
+        &self,
+        request: &PlanLifecycleRequest,
+    ) -> Vec<HookRunSummary> {
+        crate::events::plan_lifecycle::preview(&self.handlers, request)
+    }
+
+    pub(crate) async fn run_plan_lifecycle(
+        &self,
+        request: PlanLifecycleRequest,
+    ) -> PlanLifecycleOutcome {
+        crate::events::plan_lifecycle::run(&self.handlers, &self.shell, request).await
     }
 
     pub(crate) fn preview_user_prompt_submit(

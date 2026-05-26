@@ -51,6 +51,11 @@ pub(crate) fn select_handlers_for_matcher_inputs(
             | HookEventName::SessionStart
             | HookEventName::SubagentStart
             | HookEventName::SubagentStop
+            | HookEventName::TaskCreated
+            | HookEventName::TaskCompleted
+            | HookEventName::PlanCreated
+            | HookEventName::PlanUpdated
+            | HookEventName::PlanCompleted
             | HookEventName::PreCompact
             | HookEventName::PostCompact => {
                 if matcher_inputs.is_empty() {
@@ -149,6 +154,11 @@ fn scope_for_event(event_name: HookEventName) -> HookScope {
         | HookEventName::PostCompact
         | HookEventName::UserPromptSubmit
         | HookEventName::SubagentStop
+        | HookEventName::TaskCreated
+        | HookEventName::TaskCompleted
+        | HookEventName::PlanCreated
+        | HookEventName::PlanUpdated
+        | HookEventName::PlanCompleted
         | HookEventName::Stop => HookScope::Turn,
     }
 }
@@ -205,6 +215,24 @@ mod tests {
         assert_eq!(selected.len(), 2);
         assert_eq!(selected[0].display_order, 0);
         assert_eq!(selected[1].display_order, 1);
+    }
+
+    #[test]
+    fn select_handlers_matches_task_and_plan_lifecycle_sources() {
+        let handlers = vec![
+            make_handler(HookEventName::TaskCreated, Some("regular"), "task", 0),
+            make_handler(HookEventName::TaskCreated, Some("review"), "review", 1),
+            make_handler(HookEventName::PlanUpdated, Some("external"), "external", 2),
+            make_handler(HookEventName::PlanUpdated, Some("update_plan"), "tool", 3),
+        ];
+
+        let task = select_handlers(&handlers, HookEventName::TaskCreated, Some("regular"));
+        assert_eq!(task.len(), 1);
+        assert_eq!(task[0].command, "task");
+
+        let plan = select_handlers(&handlers, HookEventName::PlanUpdated, Some("external"));
+        assert_eq!(plan.len(), 1);
+        assert_eq!(plan[0].command, "external");
     }
 
     #[test]

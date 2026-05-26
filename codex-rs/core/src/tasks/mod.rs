@@ -27,6 +27,7 @@ use crate::goals::GoalRuntimeEvent;
 use crate::hook_runtime::inspect_pending_input;
 use crate::hook_runtime::record_additional_contexts;
 use crate::hook_runtime::record_pending_input;
+use crate::hook_runtime::run_task_lifecycle_hooks;
 use crate::session::TurnInput;
 use crate::session::session::Session;
 use crate::session::turn_context::TurnContext;
@@ -44,6 +45,7 @@ use codex_otel::TURN_TOKEN_USAGE_METRIC;
 use codex_otel::TURN_TOOL_CALL_METRIC;
 use codex_protocol::models::ResponseItem;
 use codex_protocol::protocol::EventMsg;
+use codex_protocol::protocol::HookEventName;
 use codex_protocol::protocol::RolloutItem;
 use codex_protocol::protocol::TokenUsage;
 use codex_protocol::protocol::TurnAbortReason;
@@ -143,6 +145,14 @@ fn emit_turn_memory_metric(
             ("has_citations", bool_tag(has_citations)),
         ],
     );
+}
+
+fn task_kind_label(kind: TaskKind) -> &'static str {
+    match kind {
+        TaskKind::Regular => "regular",
+        TaskKind::Review => "review",
+        TaskKind::Compact => "compact",
+    }
 }
 
 fn bool_tag(value: bool) -> &'static str {
@@ -355,6 +365,7 @@ impl Session {
             let mut active = self.active_turn.lock().await;
             let turn = active.get_or_insert_with(ActiveTurn::default);
             debug_assert!(turn.tasks.is_empty());
+            turn.pending_turn_context = Some(Arc::clone(&turn_context));
             Arc::clone(&turn.turn_state)
         };
         turn_state.lock().await.token_usage_at_turn_start = token_usage_at_turn_start.clone();
@@ -368,6 +379,17 @@ impl Session {
             .await;
         self.emit_turn_start_lifecycle(turn_context.as_ref(), &token_usage_at_turn_start)
             .await;
+        run_task_lifecycle_hooks(
+            self,
+            &turn_context,
+            HookEventName::TaskCreated,
+            task_kind_label(task_kind).to_string(),
+            None,
+            None,
+            None,
+            None,
+        )
+        .await;
 
         let turn_extension_data = Arc::clone(&turn_context.extension_data);
         let mut active = self.active_turn.lock().await;
@@ -600,11 +622,13 @@ impl Session {
         let mut turn_had_memory_citation = false;
         let mut turn_tool_calls = 0_u64;
         let mut records_turn_token_usage_on_span = false;
+        let mut task_kind = TaskKind::Regular;
         let turn_state = {
             let mut active = self.active_turn.lock().await;
             if let Some(at) = active.as_mut()
                 && let Some(removed_task) = at.remove_task(&turn_context.sub_id)
             {
+                task_kind = removed_task.kind;
                 records_turn_token_usage_on_span = removed_task.records_turn_token_usage_on_span;
                 if removed_task.active_turn_is_empty {
                     should_clear_active_turn = true;
@@ -790,6 +814,17 @@ impl Session {
         {
             warn!("failed to apply goal runtime turn-finished event: {err}");
         }
+        run_task_lifecycle_hooks(
+            self,
+            &turn_context,
+            HookEventName::TaskCompleted,
+            task_kind_label(task_kind).to_string(),
+            last_agent_message.clone(),
+            completed_at,
+            duration_ms,
+            time_to_first_token_ms,
+        )
+        .await;
         let event = EventMsg::TurnComplete(TurnCompleteEvent {
             turn_id: turn_context.sub_id.clone(),
             last_agent_message,

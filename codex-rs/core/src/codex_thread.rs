@@ -21,6 +21,8 @@ use codex_protocol::models::PermissionProfile;
 use codex_protocol::models::ResponseInputItem;
 use codex_protocol::models::ResponseItem;
 use codex_protocol::openai_models::ReasoningEffort;
+use codex_protocol::plan_tool::ExternalPlanUpdateOperation;
+use codex_protocol::plan_tool::UpdatePlanArgs;
 use codex_protocol::protocol::AskForApproval;
 use codex_protocol::protocol::Event;
 use codex_protocol::protocol::Op;
@@ -241,6 +243,18 @@ impl CodexThread {
     ) -> Result<String, SteerInputError> {
         self.codex
             .steer_input(input, expected_turn_id, responsesapi_client_metadata)
+            .await
+    }
+
+    pub async fn apply_external_plan_update(
+        &self,
+        expected_turn_id: &str,
+        explanation: Option<String>,
+        operations: Vec<ExternalPlanUpdateOperation>,
+    ) -> Result<UpdatePlanArgs, String> {
+        self.codex
+            .session
+            .apply_external_plan_update(expected_turn_id, explanation, operations)
             .await
     }
 

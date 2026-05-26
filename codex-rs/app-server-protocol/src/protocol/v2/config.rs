@@ -411,6 +411,21 @@ pub struct ManagedHooksRequirements {
     #[serde(rename = "SubagentStop")]
     #[ts(rename = "SubagentStop")]
     pub subagent_stop: Vec<ConfiguredHookMatcherGroup>,
+    #[serde(rename = "TaskCreated")]
+    #[ts(rename = "TaskCreated")]
+    pub task_created: Vec<ConfiguredHookMatcherGroup>,
+    #[serde(rename = "TaskCompleted")]
+    #[ts(rename = "TaskCompleted")]
+    pub task_completed: Vec<ConfiguredHookMatcherGroup>,
+    #[serde(rename = "PlanCreated")]
+    #[ts(rename = "PlanCreated")]
+    pub plan_created: Vec<ConfiguredHookMatcherGroup>,
+    #[serde(rename = "PlanUpdated")]
+    #[ts(rename = "PlanUpdated")]
+    pub plan_updated: Vec<ConfiguredHookMatcherGroup>,
+    #[serde(rename = "PlanCompleted")]
+    #[ts(rename = "PlanCompleted")]
+    pub plan_completed: Vec<ConfiguredHookMatcherGroup>,
     #[serde(rename = "Stop")]
     #[ts(rename = "Stop")]
     pub stop: Vec<ConfiguredHookMatcherGroup>,

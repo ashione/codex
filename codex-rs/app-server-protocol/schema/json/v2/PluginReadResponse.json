@@ -48,6 +48,11 @@
         "userPromptSubmit",
         "subagentStart",
         "subagentStop",
+        "taskCreated",
+        "taskCompleted",
+        "planCreated",
+        "planUpdated",
+        "planCompleted",
         "stop"
       ],
       "type": "string"

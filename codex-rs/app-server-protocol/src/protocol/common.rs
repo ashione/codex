@@ -759,6 +759,11 @@ client_request_definitions! {
         serialization: thread_id(params.thread_id),
         response: v2::TurnInterruptResponse,
     },
+    TurnPlanUpdate => "turn/plan_update" {
+        params: v2::TurnPlanUpdateParams,
+        serialization: thread_id(params.thread_id),
+        response: v2::TurnPlanUpdateResponse,
+    },
     #[experimental("thread/realtime/start")]
     ThreadRealtimeStart => "thread/realtime/start" {
         params: v2::ThreadRealtimeStartParams,

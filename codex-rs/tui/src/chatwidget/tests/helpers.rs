@@ -1573,6 +1573,11 @@ fn hook_event_label(event_name: codex_app_server_protocol::HookEventName) -> &'s
         codex_app_server_protocol::HookEventName::UserPromptSubmit => "UserPromptSubmit",
         codex_app_server_protocol::HookEventName::SubagentStart => "SubagentStart",
         codex_app_server_protocol::HookEventName::SubagentStop => "SubagentStop",
+        codex_app_server_protocol::HookEventName::TaskCreated => "TaskCreated",
+        codex_app_server_protocol::HookEventName::TaskCompleted => "TaskCompleted",
+        codex_app_server_protocol::HookEventName::PlanCreated => "PlanCreated",
+        codex_app_server_protocol::HookEventName::PlanUpdated => "PlanUpdated",
+        codex_app_server_protocol::HookEventName::PlanCompleted => "PlanCompleted",
         codex_app_server_protocol::HookEventName::Stop => "Stop",
     }
 }

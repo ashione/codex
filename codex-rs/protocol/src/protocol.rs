@@ -44,6 +44,7 @@ use crate::models::WebSearchAction;
 use crate::num_format::format_with_separators;
 use crate::openai_models::ReasoningEffort as ReasoningEffortConfig;
 use crate::parse_command::ParsedCommand;
+use crate::plan_tool::ExternalPlanUpdateOperation;
 use crate::plan_tool::UpdatePlanArgs;
 use crate::request_permissions::RequestPermissionsEvent;
 use crate::request_permissions::RequestPermissionsResponse;
@@ -627,6 +628,14 @@ pub enum Op {
     /// Record that the user approved one retry of a concrete Guardian-denied action.
     ApproveGuardianDeniedAction { event: GuardianAssessmentEvent },
 
+    /// Apply a bounded external patch to the active turn checklist plan.
+    ExternalPlanUpdate {
+        expected_turn_id: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        explanation: Option<String>,
+        operations: Vec<ExternalPlanUpdateOperation>,
+    },
+
     /// Request to shut down codex instance.
     Shutdown,
 
@@ -737,6 +746,7 @@ impl Op {
             Self::ThreadRollback { .. } => "thread_rollback",
             Self::Review { .. } => "review",
             Self::ApproveGuardianDeniedAction { .. } => "approve_guardian_denied_action",
+            Self::ExternalPlanUpdate { .. } => "external_plan_update",
             Self::Shutdown => "shutdown",
             Self::RunUserShellCommand { .. } => "run_user_shell_command",
         }
@@ -1339,6 +1349,11 @@ pub enum HookEventName {
     UserPromptSubmit,
     SubagentStart,
     SubagentStop,
+    TaskCreated,
+    TaskCompleted,
+    PlanCreated,
+    PlanUpdated,
+    PlanCompleted,
     Stop,
 }
 

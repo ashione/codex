@@ -8,6 +8,7 @@ use codex_protocol::config_types::Personality;
 use codex_protocol::config_types::ReasoningSummary;
 use codex_protocol::models::ImageDetail;
 use codex_protocol::openai_models::ReasoningEffort;
+use codex_protocol::plan_tool::ExternalPlanUpdateOperation as CoreExternalPlanUpdateOperation;
 use codex_protocol::plan_tool::PlanItemArg as CorePlanItemArg;
 use codex_protocol::plan_tool::StepStatus as CorePlanStepStatus;
 use codex_protocol::user_input::ByteRange as CoreByteRange;
@@ -165,6 +166,48 @@ pub struct TurnInterruptParams {
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
 pub struct TurnInterruptResponse {}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct TurnPlanUpdateParams {
+    pub thread_id: String,
+    pub expected_turn_id: String,
+    #[serde(default)]
+    pub operations: Vec<TurnPlanUpdateOperation>,
+    #[ts(optional = nullable)]
+    pub explanation: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[serde(tag = "type", rename_all = "camelCase")]
+#[ts(tag = "type")]
+#[ts(export_to = "v2/")]
+pub enum TurnPlanUpdateOperation {
+    Append {
+        step: String,
+        #[serde(default)]
+        #[ts(optional)]
+        status: Option<TurnPlanStepStatus>,
+    },
+    Update {
+        index: usize,
+        #[serde(default)]
+        #[ts(optional)]
+        step: Option<String>,
+        #[serde(default)]
+        #[ts(optional)]
+        status: Option<TurnPlanStepStatus>,
+    },
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct TurnPlanUpdateResponse {
+    pub explanation: Option<String>,
+    pub plan: Vec<TurnPlanStep>,
+}
 
 // User input types
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema, TS)]
@@ -400,6 +443,38 @@ impl From<CorePlanStepStatus> for TurnPlanStepStatus {
             CorePlanStepStatus::Pending => Self::Pending,
             CorePlanStepStatus::InProgress => Self::InProgress,
             CorePlanStepStatus::Completed => Self::Completed,
+        }
+    }
+}
+
+impl From<TurnPlanStepStatus> for CorePlanStepStatus {
+    fn from(value: TurnPlanStepStatus) -> Self {
+        match value {
+            TurnPlanStepStatus::Pending => Self::Pending,
+            TurnPlanStepStatus::InProgress => Self::InProgress,
+            TurnPlanStepStatus::Completed => Self::Completed,
+        }
+    }
+}
+
+impl From<TurnPlanUpdateOperation> for CoreExternalPlanUpdateOperation {
+    fn from(value: TurnPlanUpdateOperation) -> Self {
+        match value {
+            TurnPlanUpdateOperation::Append { step, status } => {
+                CoreExternalPlanUpdateOperation::Append {
+                    step,
+                    status: status.map(Into::into),
+                }
+            }
+            TurnPlanUpdateOperation::Update {
+                index,
+                step,
+                status,
+            } => CoreExternalPlanUpdateOperation::Update {
+                index,
+                step,
+                status: status.map(Into::into),
+            },
         }
     }
 }

@@ -10,7 +10,6 @@ use codex_protocol::config_types::ModeKind;
 use codex_protocol::models::FunctionCallOutputPayload;
 use codex_protocol::models::ResponseInputItem;
 use codex_protocol::plan_tool::UpdatePlanArgs;
-use codex_protocol::protocol::EventMsg;
 use codex_tools::ToolName;
 use codex_tools::ToolSpec;
 use serde_json::Value as JsonValue;
@@ -83,9 +82,7 @@ impl ToolExecutor<ToolInvocation> for PlanHandler {
         }
 
         let args = parse_update_plan_arguments(&arguments)?;
-        session
-            .send_event(turn.as_ref(), EventMsg::PlanUpdate(args))
-            .await;
+        session.apply_model_plan_update(&turn, args).await;
 
         Ok(boxed_tool_output(PlanToolOutput))
     }

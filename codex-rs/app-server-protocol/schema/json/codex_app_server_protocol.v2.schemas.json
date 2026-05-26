@@ -2138,6 +2138,30 @@
             },
             "method": {
               "enum": [
+                "turn/plan_update"
+              ],
+              "title": "Turn/planUpdateRequestMethod",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/definitions/TurnPlanUpdateParams"
+            }
+          },
+          "required": [
+            "id",
+            "method",
+            "params"
+          ],
+          "title": "Turn/planUpdateRequest",
+          "type": "object"
+        },
+        {
+          "properties": {
+            "id": {
+              "$ref": "#/definitions/RequestId"
+            },
+            "method": {
+              "enum": [
                 "review/start"
               ],
               "title": "Review/startRequestMethod",
@@ -6262,6 +6286,11 @@
         "userPromptSubmit",
         "subagentStart",
         "subagentStop",
+        "taskCreated",
+        "taskCompleted",
+        "planCreated",
+        "planUpdated",
+        "planCompleted",
         "stop"
       ],
       "type": "string"
@@ -7165,6 +7194,24 @@
           },
           "type": "array"
         },
+        "PlanCompleted": {
+          "items": {
+            "$ref": "#/definitions/ConfiguredHookMatcherGroup"
+          },
+          "type": "array"
+        },
+        "PlanCreated": {
+          "items": {
+            "$ref": "#/definitions/ConfiguredHookMatcherGroup"
+          },
+          "type": "array"
+        },
+        "PlanUpdated": {
+          "items": {
+            "$ref": "#/definitions/ConfiguredHookMatcherGroup"
+          },
+          "type": "array"
+        },
         "PostCompact": {
           "items": {
             "$ref": "#/definitions/ConfiguredHookMatcherGroup"
@@ -7213,6 +7260,18 @@
           },
           "type": "array"
         },
+        "TaskCompleted": {
+          "items": {
+            "$ref": "#/definitions/ConfiguredHookMatcherGroup"
+          },
+          "type": "array"
+        },
+        "TaskCreated": {
+          "items": {
+            "$ref": "#/definitions/ConfiguredHookMatcherGroup"
+          },
+          "type": "array"
+        },
         "UserPromptSubmit": {
           "items": {
             "$ref": "#/definitions/ConfiguredHookMatcherGroup"
@@ -7234,6 +7293,9 @@
       },
       "required": [
         "PermissionRequest",
+        "PlanCompleted",
+        "PlanCreated",
+        "PlanUpdated",
         "PostCompact",
         "PostToolUse",
         "PreCompact",
@@ -7242,6 +7304,8 @@
         "Stop",
         "SubagentStart",
         "SubagentStop",
+        "TaskCompleted",
+        "TaskCreated",
         "UserPromptSubmit"
       ],
       "type": "object"
@@ -16064,6 +16128,133 @@
         "completed"
       ],
       "type": "string"
+    },
+    "TurnPlanUpdateOperation": {
+      "oneOf": [
+        {
+          "properties": {
+            "status": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/TurnPlanStepStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "step": {
+              "type": "string"
+            },
+            "type": {
+              "enum": [
+                "append"
+              ],
+              "title": "AppendTurnPlanUpdateOperationType",
+              "type": "string"
+            }
+          },
+          "required": [
+            "step",
+            "type"
+          ],
+          "title": "AppendTurnPlanUpdateOperation",
+          "type": "object"
+        },
+        {
+          "properties": {
+            "index": {
+              "format": "uint",
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "status": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/TurnPlanStepStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "step": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "type": {
+              "enum": [
+                "update"
+              ],
+              "title": "UpdateTurnPlanUpdateOperationType",
+              "type": "string"
+            }
+          },
+          "required": [
+            "index",
+            "type"
+          ],
+          "title": "UpdateTurnPlanUpdateOperation",
+          "type": "object"
+        }
+      ]
+    },
+    "TurnPlanUpdateParams": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "expectedTurnId": {
+          "type": "string"
+        },
+        "explanation": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "operations": {
+          "default": [],
+          "items": {
+            "$ref": "#/definitions/TurnPlanUpdateOperation"
+          },
+          "type": "array"
+        },
+        "threadId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "expectedTurnId",
+        "threadId"
+      ],
+      "title": "TurnPlanUpdateParams",
+      "type": "object"
+    },
+    "TurnPlanUpdateResponse": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "explanation": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "plan": {
+          "items": {
+            "$ref": "#/definitions/TurnPlanStep"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "plan"
+      ],
+      "title": "TurnPlanUpdateResponse",
+      "type": "object"
     },
     "TurnPlanUpdatedNotification": {
       "$schema": "http://json-schema.org/draft-07/schema#",

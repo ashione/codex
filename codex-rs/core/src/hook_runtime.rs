@@ -8,6 +8,7 @@ use codex_analytics::build_track_events_context;
 use codex_hooks::PermissionRequestDecision;
 use codex_hooks::PermissionRequestOutcome;
 use codex_hooks::PermissionRequestRequest;
+use codex_hooks::PlanLifecycleRequest;
 use codex_hooks::PostToolUseOutcome;
 use codex_hooks::PostToolUseRequest;
 use codex_hooks::PreToolUseOutcome;
@@ -17,6 +18,7 @@ use codex_hooks::StartHookTarget;
 use codex_hooks::StopHookTarget;
 use codex_hooks::StopOutcome;
 use codex_hooks::SubagentHookContext;
+use codex_hooks::TaskLifecycleRequest;
 use codex_hooks::UserPromptSubmitOutcome;
 use codex_hooks::UserPromptSubmitRequest;
 use codex_otel::HOOK_RUN_DURATION_METRIC;
@@ -427,6 +429,68 @@ pub(crate) async fn run_post_compact_hooks(
     }
 }
 
+pub(crate) async fn run_task_lifecycle_hooks(
+    sess: &Arc<Session>,
+    turn_context: &Arc<TurnContext>,
+    event_name: HookEventName,
+    task_kind: String,
+    last_agent_message: Option<String>,
+    completed_at: Option<i64>,
+    duration_ms: Option<i64>,
+    time_to_first_token_ms: Option<i64>,
+) {
+    let request = TaskLifecycleRequest {
+        session_id: sess.session_id().into(),
+        turn_id: turn_context.sub_id.clone(),
+        cwd: turn_context.cwd.clone(),
+        transcript_path: sess.hook_transcript_path().await,
+        model: turn_context.model_info.slug.clone(),
+        permission_mode: hook_permission_mode(turn_context),
+        event_name,
+        task_kind,
+        last_agent_message,
+        completed_at,
+        duration_ms,
+        time_to_first_token_ms,
+    };
+    let hooks = sess.hooks();
+    let preview_runs = hooks.preview_task_lifecycle(&request);
+    emit_hook_started_events(sess, turn_context, preview_runs).await;
+    let outcome = hooks.run_task_lifecycle(request).await;
+    emit_hook_completed_events(sess, turn_context, outcome.hook_events).await;
+}
+
+pub(crate) async fn run_plan_lifecycle_hooks(
+    sess: &Arc<Session>,
+    turn_context: &Arc<TurnContext>,
+    event_name: HookEventName,
+    plan_source: String,
+    explanation: Option<String>,
+    plan: Vec<codex_protocol::plan_tool::PlanItemArg>,
+    previous_plan: Option<Vec<codex_protocol::plan_tool::PlanItemArg>>,
+    plan_text: Option<String>,
+) {
+    let request = PlanLifecycleRequest {
+        session_id: sess.session_id().into(),
+        turn_id: turn_context.sub_id.clone(),
+        cwd: turn_context.cwd.clone(),
+        transcript_path: sess.hook_transcript_path().await,
+        model: turn_context.model_info.slug.clone(),
+        permission_mode: hook_permission_mode(turn_context),
+        event_name,
+        plan_source,
+        explanation,
+        plan,
+        previous_plan,
+        plan_text,
+    };
+    let hooks = sess.hooks();
+    let preview_runs = hooks.preview_plan_lifecycle(&request);
+    emit_hook_started_events(sess, turn_context, preview_runs).await;
+    let outcome = hooks.run_plan_lifecycle(request).await;
+    emit_hook_completed_events(sess, turn_context, outcome.hook_events).await;
+}
+
 pub(crate) async fn run_legacy_after_agent_hook(
     sess: &Arc<Session>,
     turn_context: &Arc<TurnContext>,
@@ -691,6 +755,11 @@ fn hook_run_metric_tags(run: &HookRunSummary) -> [(&'static str, &'static str); 
         HookEventName::UserPromptSubmit => "UserPromptSubmit",
         HookEventName::SubagentStart => "SubagentStart",
         HookEventName::SubagentStop => "SubagentStop",
+        HookEventName::TaskCreated => "TaskCreated",
+        HookEventName::TaskCompleted => "TaskCompleted",
+        HookEventName::PlanCreated => "PlanCreated",
+        HookEventName::PlanUpdated => "PlanUpdated",
+        HookEventName::PlanCompleted => "PlanCompleted",
         HookEventName::Stop => "Stop",
     };
     let hook_source = match run.source {
