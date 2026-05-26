@@ -836,6 +836,26 @@ pub(super) async fn submission_loop(
                     approve_guardian_denied_action(&sess, event).await;
                     false
                 }
+                Op::ExternalPlanUpdate {
+                    expected_turn_id,
+                    explanation,
+                    operations,
+                } => {
+                    if let Err(message) = sess
+                        .apply_external_plan_update(&expected_turn_id, explanation, operations)
+                        .await
+                    {
+                        sess.send_event_raw(Event {
+                            id: sub.id.clone(),
+                            msg: EventMsg::Error(ErrorEvent {
+                                message,
+                                codex_error_info: Some(CodexErrorInfo::BadRequest),
+                            }),
+                        })
+                        .await;
+                    }
+                    false
+                }
                 _ => false, // Ignore unknown ops; enum is non_exhaustive to allow extensions.
             }
         }

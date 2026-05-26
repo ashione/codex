@@ -3895,6 +3895,117 @@
         }
       ]
     },
+    "TurnPlanStepStatus": {
+      "enum": [
+        "pending",
+        "inProgress",
+        "completed"
+      ],
+      "type": "string"
+    },
+    "TurnPlanUpdateOperation": {
+      "oneOf": [
+        {
+          "properties": {
+            "status": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/TurnPlanStepStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "step": {
+              "type": "string"
+            },
+            "type": {
+              "enum": [
+                "append"
+              ],
+              "title": "AppendTurnPlanUpdateOperationType",
+              "type": "string"
+            }
+          },
+          "required": [
+            "step",
+            "type"
+          ],
+          "title": "AppendTurnPlanUpdateOperation",
+          "type": "object"
+        },
+        {
+          "properties": {
+            "index": {
+              "format": "uint",
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "status": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/TurnPlanStepStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "step": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "type": {
+              "enum": [
+                "update"
+              ],
+              "title": "UpdateTurnPlanUpdateOperationType",
+              "type": "string"
+            }
+          },
+          "required": [
+            "index",
+            "type"
+          ],
+          "title": "UpdateTurnPlanUpdateOperation",
+          "type": "object"
+        }
+      ]
+    },
+    "TurnPlanUpdateParams": {
+      "properties": {
+        "expectedTurnId": {
+          "type": "string"
+        },
+        "explanation": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "operations": {
+          "default": [],
+          "items": {
+            "$ref": "#/definitions/TurnPlanUpdateOperation"
+          },
+          "type": "array"
+        },
+        "threadId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "expectedTurnId",
+        "threadId"
+      ],
+      "type": "object"
+    },
     "TurnStartParams": {
       "properties": {
         "approvalPolicy": {
@@ -5399,6 +5510,30 @@
         "params"
       ],
       "title": "Turn/interruptRequest",
+      "type": "object"
+    },
+    {
+      "properties": {
+        "id": {
+          "$ref": "#/definitions/RequestId"
+        },
+        "method": {
+          "enum": [
+            "turn/plan_update"
+          ],
+          "title": "Turn/planUpdateRequestMethod",
+          "type": "string"
+        },
+        "params": {
+          "$ref": "#/definitions/TurnPlanUpdateParams"
+        }
+      },
+      "required": [
+        "id",
+        "method",
+        "params"
+      ],
+      "title": "Turn/planUpdateRequest",
       "type": "object"
     },
     {

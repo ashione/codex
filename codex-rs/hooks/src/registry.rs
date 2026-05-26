@@ -11,6 +11,8 @@ use crate::events::compact::PreCompactRequest;
 use crate::events::compact::StatelessHookOutcome;
 use crate::events::permission_request::PermissionRequestOutcome;
 use crate::events::permission_request::PermissionRequestRequest;
+use crate::events::plan_lifecycle::PlanLifecycleOutcome;
+use crate::events::plan_lifecycle::PlanLifecycleRequest;
 use crate::events::post_tool_use::PostToolUseOutcome;
 use crate::events::post_tool_use::PostToolUseRequest;
 use crate::events::pre_tool_use::PreToolUseOutcome;
@@ -19,6 +21,8 @@ use crate::events::session_start::SessionStartOutcome;
 use crate::events::session_start::SessionStartRequest;
 use crate::events::stop::StopOutcome;
 use crate::events::stop::StopRequest;
+use crate::events::task_lifecycle::TaskLifecycleOutcome;
+use crate::events::task_lifecycle::TaskLifecycleRequest;
 use crate::events::user_prompt_submit::UserPromptSubmitOutcome;
 use crate::events::user_prompt_submit::UserPromptSubmitRequest;
 use crate::types::Hook;
@@ -177,6 +181,28 @@ impl Hooks {
 
     pub async fn run_post_compact(&self, request: PostCompactRequest) -> StatelessHookOutcome {
         self.engine.run_post_compact(request).await
+    }
+
+    pub fn preview_task_lifecycle(
+        &self,
+        request: &TaskLifecycleRequest,
+    ) -> Vec<codex_protocol::protocol::HookRunSummary> {
+        self.engine.preview_task_lifecycle(request)
+    }
+
+    pub async fn run_task_lifecycle(&self, request: TaskLifecycleRequest) -> TaskLifecycleOutcome {
+        self.engine.run_task_lifecycle(request).await
+    }
+
+    pub fn preview_plan_lifecycle(
+        &self,
+        request: &PlanLifecycleRequest,
+    ) -> Vec<codex_protocol::protocol::HookRunSummary> {
+        self.engine.preview_plan_lifecycle(request)
+    }
+
+    pub async fn run_plan_lifecycle(&self, request: PlanLifecycleRequest) -> PlanLifecycleOutcome {
+        self.engine.run_plan_lifecycle(request).await
     }
 
     pub fn preview_user_prompt_submit(

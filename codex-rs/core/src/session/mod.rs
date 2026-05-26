@@ -97,8 +97,11 @@ use codex_protocol::openai_models::ModelInfo;
 use codex_protocol::openai_models::ModelPreset;
 use codex_protocol::permissions::FileSystemSandboxPolicy;
 use codex_protocol::permissions::NetworkSandboxPolicy;
+use codex_protocol::plan_tool::ExternalPlanUpdateOperation;
+use codex_protocol::plan_tool::UpdatePlanArgs;
 use codex_protocol::protocol::FileChange;
 use codex_protocol::protocol::HasLegacyEvent;
+use codex_protocol::protocol::HookEventName;
 use codex_protocol::protocol::InterAgentCommunication;
 use codex_protocol::protocol::ItemCompletedEvent;
 use codex_protocol::protocol::ItemStartedEvent;
@@ -263,6 +266,174 @@ impl SteerInputError {
     }
 }
 
+impl Session {
+    pub(crate) async fn apply_model_plan_update(
+        self: &Arc<Self>,
+        turn_context: &Arc<TurnContext>,
+        update: UpdatePlanArgs,
+    ) {
+        let Some(transition) = self.apply_plan_snapshot(turn_context, update).await else {
+            return;
+        };
+        self.emit_plan_transition_hooks(turn_context, "update_plan", &transition, None)
+            .await;
+        self.send_event(
+            turn_context.as_ref(),
+            EventMsg::PlanUpdate(transition.current_plan),
+        )
+        .await;
+    }
+
+    pub(crate) async fn apply_external_plan_update(
+        self: &Arc<Self>,
+        expected_turn_id: &str,
+        explanation: Option<String>,
+        operations: Vec<ExternalPlanUpdateOperation>,
+    ) -> Result<UpdatePlanArgs, String> {
+        let (turn_context, turn_state) = {
+            let active = self.active_turn.lock().await;
+            let Some(active_turn) = active.as_ref() else {
+                return Err("no active turn to update plan".to_string());
+            };
+            let turn_context = active_turn
+                .tasks
+                .get(expected_turn_id)
+                .map(|task| Arc::clone(&task.turn_context))
+                .or_else(|| {
+                    active_turn
+                        .pending_turn_context
+                        .as_ref()
+                        .filter(|turn_context| turn_context.sub_id == expected_turn_id)
+                        .map(Arc::clone)
+                });
+            let Some(turn_context) = turn_context else {
+                return Err(format!(
+                    "expected active turn id `{expected_turn_id}` but no matching active turn was found",
+                ));
+            };
+            (turn_context, Arc::clone(&active_turn.turn_state))
+        };
+        let transition = {
+            let mut state = turn_state.lock().await;
+            state.apply_external_plan_update(explanation, operations)?
+        };
+        self.emit_plan_transition_hooks(&turn_context, "external", &transition, None)
+            .await;
+        self.send_event(
+            turn_context.as_ref(),
+            EventMsg::PlanUpdate(transition.current_plan.clone()),
+        )
+        .await;
+        Ok(transition.current_plan)
+    }
+
+    pub(crate) async fn emit_proposed_plan_created(
+        self: &Arc<Self>,
+        turn_context: &Arc<TurnContext>,
+    ) {
+        crate::hook_runtime::run_plan_lifecycle_hooks(
+            self,
+            turn_context,
+            HookEventName::PlanCreated,
+            "proposed_plan".to_string(),
+            None,
+            Vec::new(),
+            None,
+            None,
+        )
+        .await;
+    }
+
+    pub(crate) async fn emit_proposed_plan_completed(
+        self: &Arc<Self>,
+        turn_context: &Arc<TurnContext>,
+        plan_text: String,
+    ) {
+        crate::hook_runtime::run_plan_lifecycle_hooks(
+            self,
+            turn_context,
+            HookEventName::PlanCompleted,
+            "proposed_plan".to_string(),
+            None,
+            Vec::new(),
+            None,
+            Some(plan_text),
+        )
+        .await;
+    }
+
+    async fn apply_plan_snapshot(
+        self: &Arc<Self>,
+        turn_context: &Arc<TurnContext>,
+        update: UpdatePlanArgs,
+    ) -> Option<PlanLifecycleTransition> {
+        let turn_state = {
+            let active = self.active_turn.lock().await;
+            let Some(active_turn) = active.as_ref() else {
+                warn!("update_plan ignored because there is no active turn");
+                return None;
+            };
+            if !active_turn.tasks.contains_key(&turn_context.sub_id) {
+                warn!(
+                    turn_id = %turn_context.sub_id,
+                    "update_plan ignored because the turn is no longer active"
+                );
+                return None;
+            }
+            Arc::clone(&active_turn.turn_state)
+        };
+        Some(turn_state.lock().await.apply_plan_snapshot(update))
+    }
+
+    async fn emit_plan_transition_hooks(
+        self: &Arc<Self>,
+        turn_context: &Arc<TurnContext>,
+        plan_source: &str,
+        transition: &PlanLifecycleTransition,
+        plan_text: Option<String>,
+    ) {
+        if transition.created {
+            crate::hook_runtime::run_plan_lifecycle_hooks(
+                self,
+                turn_context,
+                HookEventName::PlanCreated,
+                plan_source.to_string(),
+                transition.current_plan.explanation.clone(),
+                transition.current_plan.plan.clone(),
+                transition.previous_plan.clone(),
+                plan_text.clone(),
+            )
+            .await;
+        }
+        if transition.updated {
+            crate::hook_runtime::run_plan_lifecycle_hooks(
+                self,
+                turn_context,
+                HookEventName::PlanUpdated,
+                plan_source.to_string(),
+                transition.current_plan.explanation.clone(),
+                transition.current_plan.plan.clone(),
+                transition.previous_plan.clone(),
+                plan_text.clone(),
+            )
+            .await;
+        }
+        if transition.completed {
+            crate::hook_runtime::run_plan_lifecycle_hooks(
+                self,
+                turn_context,
+                HookEventName::PlanCompleted,
+                plan_source.to_string(),
+                transition.current_plan.explanation.clone(),
+                transition.current_plan.plan.clone(),
+                transition.previous_plan.clone(),
+                plan_text,
+            )
+            .await;
+        }
+    }
+}
+
 /// Notes from the previous real user turn.
 ///
 /// Conceptually this is the same role that `previous_model` used to fill, but
@@ -292,6 +463,7 @@ use crate::shell;
 use crate::shell_snapshot::ShellSnapshot;
 use crate::state::AutoCompactWindowSnapshot;
 use crate::state::PendingRequestPermissions;
+use crate::state::PlanLifecycleTransition;
 use crate::state::SessionServices;
 use crate::state::SessionState;
 #[cfg(test)]

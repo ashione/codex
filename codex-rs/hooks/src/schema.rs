@@ -560,6 +560,45 @@ pub(crate) struct StopCommandInput {
 
 #[derive(Debug, Clone, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
+#[schemars(rename = "task-lifecycle.command.input")]
+pub(crate) struct TaskLifecycleCommandInput {
+    pub session_id: String,
+    pub turn_id: String,
+    pub transcript_path: NullableString,
+    pub cwd: String,
+    pub hook_event_name: String,
+    pub model: String,
+    pub permission_mode: String,
+    pub task_kind: String,
+    pub last_agent_message: NullableString,
+    pub completed_at: Option<i64>,
+    pub duration_ms: Option<i64>,
+    pub time_to_first_token_ms: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+#[schemars(rename = "plan-lifecycle.command.input")]
+pub(crate) struct PlanLifecycleCommandInput {
+    pub session_id: String,
+    pub turn_id: String,
+    pub transcript_path: NullableString,
+    pub cwd: String,
+    pub hook_event_name: String,
+    pub model: String,
+    pub permission_mode: String,
+    pub plan_source: String,
+    pub explanation: NullableString,
+    pub plan: Vec<codex_protocol::plan_tool::PlanItemArg>,
+    pub previous_plan: Option<Vec<codex_protocol::plan_tool::PlanItemArg>>,
+    pub completed_step_count: usize,
+    pub in_progress_step_count: usize,
+    pub pending_step_count: usize,
+    pub plan_text: NullableString,
+}
+
+#[derive(Debug, Clone, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 #[schemars(rename = "subagent-stop.command.input")]
 pub(crate) struct SubagentStopCommandInput {
     pub session_id: String,

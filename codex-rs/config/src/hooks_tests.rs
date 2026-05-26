@@ -170,6 +170,38 @@ command = "python3 /enterprise/place/pre.py"
 }
 
 #[test]
+fn lifecycle_hook_events_deserialize_from_toml() {
+    let parsed: HookEventsToml = toml::from_str(
+        r#"
+[[TaskCreated]]
+matcher = "regular"
+[[TaskCreated.hooks]]
+type = "command"
+command = "python3 /tmp/task_created.py"
+
+[[TaskCompleted]]
+matcher = "review"
+[[TaskCompleted.hooks]]
+type = "command"
+command = "python3 /tmp/task_completed.py"
+
+[[PlanUpdated]]
+matcher = "external"
+[[PlanUpdated.hooks]]
+type = "command"
+command = "python3 /tmp/plan_updated.py"
+"#,
+    )
+    .expect("lifecycle hook events should deserialize");
+
+    assert_eq!(parsed.task_created.len(), 1);
+    assert_eq!(parsed.task_completed.len(), 1);
+    assert_eq!(parsed.plan_updated.len(), 1);
+    assert_eq!(parsed.handler_count(), 3);
+    assert!(!parsed.is_empty());
+}
+
+#[test]
 fn hook_events_deserialize_windows_override_from_toml() {
     let parsed: HookEventsToml = toml::from_str(
         r#"

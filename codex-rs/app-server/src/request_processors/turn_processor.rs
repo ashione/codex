@@ -134,6 +134,16 @@ impl TurnRequestProcessor {
             .map(|response| response.map(Into::into))
     }
 
+    pub(crate) async fn turn_plan_update(
+        &self,
+        request_id: &ConnectionRequestId,
+        params: TurnPlanUpdateParams,
+    ) -> Result<Option<ClientResponsePayload>, JSONRPCErrorError> {
+        self.turn_plan_update_inner(request_id, params)
+            .await
+            .map(|response| Some(response.into()))
+    }
+
     pub(crate) async fn thread_realtime_start(
         &self,
         request_id: &ConnectionRequestId,
@@ -816,6 +826,35 @@ impl TurnRequestProcessor {
                 error
             })?;
         Ok(TurnSteerResponse { turn_id })
+    }
+
+    async fn turn_plan_update_inner(
+        &self,
+        request_id: &ConnectionRequestId,
+        params: TurnPlanUpdateParams,
+    ) -> Result<TurnPlanUpdateResponse, JSONRPCErrorError> {
+        let (_, thread) = self.load_thread(&params.thread_id).await?;
+        if params.expected_turn_id.is_empty() {
+            return Err(invalid_request("expectedTurnId must not be empty"));
+        }
+        if params.operations.is_empty() {
+            return Err(invalid_request("operations must not be empty"));
+        }
+        self.outgoing
+            .record_request_turn_id(request_id, &params.expected_turn_id)
+            .await;
+        let plan = thread
+            .apply_external_plan_update(
+                &params.expected_turn_id,
+                params.explanation,
+                params.operations.into_iter().map(Into::into).collect(),
+            )
+            .await
+            .map_err(invalid_request)?;
+        Ok(TurnPlanUpdateResponse {
+            explanation: plan.explanation,
+            plan: plan.plan.into_iter().map(Into::into).collect(),
+        })
     }
 
     async fn prepare_realtime_conversation_thread(

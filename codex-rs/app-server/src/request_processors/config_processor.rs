@@ -470,6 +470,11 @@ fn map_hooks_requirements_to_api(hooks: ManagedHooksRequirementsToml) -> Managed
         user_prompt_submit,
         subagent_start,
         subagent_stop,
+        task_created,
+        task_completed,
+        plan_created,
+        plan_updated,
+        plan_completed,
         stop,
     } = hooks;
 
@@ -485,6 +490,11 @@ fn map_hooks_requirements_to_api(hooks: ManagedHooksRequirementsToml) -> Managed
         user_prompt_submit: map_hook_matcher_groups_to_api(user_prompt_submit),
         subagent_start: map_hook_matcher_groups_to_api(subagent_start),
         subagent_stop: map_hook_matcher_groups_to_api(subagent_stop),
+        task_created: map_hook_matcher_groups_to_api(task_created),
+        task_completed: map_hook_matcher_groups_to_api(task_completed),
+        plan_created: map_hook_matcher_groups_to_api(plan_created),
+        plan_updated: map_hook_matcher_groups_to_api(plan_updated),
+        plan_completed: map_hook_matcher_groups_to_api(plan_completed),
         stop: map_hook_matcher_groups_to_api(stop),
     }
 }

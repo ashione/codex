@@ -20,6 +20,9 @@ use codex_config::TomlValue;
 use codex_plugin::PluginHookSource;
 use codex_plugin::PluginId;
 use codex_protocol::ThreadId;
+use codex_protocol::plan_tool::PlanItemArg;
+use codex_protocol::plan_tool::StepStatus;
+use codex_protocol::protocol::HookEventName;
 use codex_protocol::protocol::HookOutputEntry;
 use codex_protocol::protocol::HookOutputEntryKind;
 use codex_protocol::protocol::HookRunStatus;
@@ -30,7 +33,9 @@ use tempfile::tempdir;
 
 use super::ClaudeHooksEngine;
 use super::CommandShell;
+use crate::events::plan_lifecycle::PlanLifecycleRequest;
 use crate::events::pre_tool_use::PreToolUseRequest;
+use crate::events::task_lifecycle::TaskLifecycleRequest;
 
 fn cwd() -> AbsolutePathBuf {
     AbsolutePathBuf::current_dir().expect("current dir")
@@ -69,6 +74,19 @@ fn pre_tool_use_hook_events(command: impl Into<String>) -> HookEventsToml {
             }],
         }],
         ..Default::default()
+    }
+}
+
+fn command_hook_group(matcher: &str, command: &str) -> MatcherGroup {
+    MatcherGroup {
+        matcher: Some(matcher.to_string()),
+        hooks: vec![HookHandlerConfig::Command {
+            command: command.to_string(),
+            command_windows: None,
+            timeout_sec: Some(10),
+            r#async: false,
+            status_message: Some("checking".to_string()),
+        }],
     }
 }
 
@@ -256,6 +274,212 @@ with Path(r"{log_path}").open("a", encoding="utf-8") as handle:
     assert!(!outcome.should_block);
     let log_contents = fs::read_to_string(log_path).expect("read managed hook log");
     assert!(log_contents.contains("\"hook_event_name\": \"PreToolUse\""));
+}
+
+#[tokio::test]
+async fn task_and_plan_lifecycle_hooks_execute_commands_with_payloads() {
+    let temp = tempdir().expect("create temp dir");
+    let managed_dir =
+        AbsolutePathBuf::try_from(temp.path().join("managed-hooks")).expect("absolute path");
+    fs::create_dir_all(managed_dir.as_path()).expect("create managed hooks dir");
+    let script_path = managed_dir.join("lifecycle.py");
+    let log_path = managed_dir.join("lifecycle_log.jsonl");
+    fs::write(
+        script_path.as_path(),
+        format!(
+            r#"import json
+from pathlib import Path
+import sys
+
+payload = json.load(sys.stdin)
+with Path(r"{log_path}").open("a", encoding="utf-8") as handle:
+    handle.write(json.dumps(payload, sort_keys=True) + "\n")
+"#,
+            log_path = log_path.display(),
+        ),
+    )
+    .expect("write lifecycle hook script");
+
+    let command = format!("python3 {}", script_path.display());
+    let managed_hooks = managed_hooks_for_current_platform(
+        managed_dir.clone(),
+        HookEventsToml {
+            task_created: vec![command_hook_group("^regular$", &command)],
+            task_completed: vec![command_hook_group("^regular$", &command)],
+            plan_created: vec![command_hook_group("^update_plan$", &command)],
+            plan_updated: vec![command_hook_group("^external$", &command)],
+            plan_completed: vec![command_hook_group("^proposed_plan$", &command)],
+            ..Default::default()
+        },
+    );
+    let config_layer_stack = ConfigLayerStack::new(
+        Vec::new(),
+        ConfigRequirements {
+            managed_hooks: Some(ConstrainedWithSource::new(
+                Constrained::allow_any(managed_hooks.clone()),
+                Some(RequirementSource::CloudRequirements),
+            )),
+            ..ConfigRequirements::default()
+        },
+        ConfigRequirementsToml {
+            hooks: Some(managed_hooks),
+            ..ConfigRequirementsToml::default()
+        },
+    )
+    .expect("config layer stack");
+
+    let engine = ClaudeHooksEngine::new(
+        /*enabled*/ true,
+        /*bypass_hook_trust*/ false,
+        Some(&config_layer_stack),
+        Vec::new(),
+        Vec::new(),
+        CommandShell {
+            program: String::new(),
+            args: Vec::new(),
+        },
+    );
+
+    assert!(engine.warnings().is_empty());
+    assert_eq!(engine.handlers.len(), 5);
+    let cwd = cwd();
+    let task_created = TaskLifecycleRequest {
+        session_id: ThreadId::new(),
+        turn_id: "turn-1".to_string(),
+        cwd: cwd.clone(),
+        transcript_path: None,
+        model: "gpt-test".to_string(),
+        permission_mode: "default".to_string(),
+        event_name: HookEventName::TaskCreated,
+        task_kind: "regular".to_string(),
+        last_agent_message: None,
+        completed_at: None,
+        duration_ms: None,
+        time_to_first_token_ms: None,
+    };
+    assert_eq!(engine.preview_task_lifecycle(&task_created).len(), 1);
+    let task_created_outcome = engine.run_task_lifecycle(task_created).await;
+    assert_eq!(task_created_outcome.hook_events.len(), 1);
+    assert_eq!(
+        task_created_outcome.hook_events[0].run.status,
+        HookRunStatus::Completed
+    );
+
+    let task_completed_outcome = engine
+        .run_task_lifecycle(TaskLifecycleRequest {
+            session_id: ThreadId::new(),
+            turn_id: "turn-1".to_string(),
+            cwd: cwd.clone(),
+            transcript_path: None,
+            model: "gpt-test".to_string(),
+            permission_mode: "default".to_string(),
+            event_name: HookEventName::TaskCompleted,
+            task_kind: "regular".to_string(),
+            last_agent_message: Some("done".to_string()),
+            completed_at: Some(123),
+            duration_ms: Some(456),
+            time_to_first_token_ms: Some(12),
+        })
+        .await;
+    assert_eq!(task_completed_outcome.hook_events.len(), 1);
+    assert_eq!(
+        task_completed_outcome.hook_events[0].run.status,
+        HookRunStatus::Completed
+    );
+
+    let plan = vec![PlanItemArg {
+        step: "ship".to_string(),
+        status: StepStatus::InProgress,
+    }];
+    let plan_created = PlanLifecycleRequest {
+        session_id: ThreadId::new(),
+        turn_id: "turn-1".to_string(),
+        cwd: cwd.clone(),
+        transcript_path: None,
+        model: "gpt-test".to_string(),
+        permission_mode: "default".to_string(),
+        event_name: HookEventName::PlanCreated,
+        plan_source: "update_plan".to_string(),
+        explanation: Some("start".to_string()),
+        plan: plan.clone(),
+        previous_plan: None,
+        plan_text: None,
+    };
+    assert_eq!(engine.preview_plan_lifecycle(&plan_created).len(), 1);
+    let plan_created_outcome = engine.run_plan_lifecycle(plan_created).await;
+    assert_eq!(plan_created_outcome.hook_events.len(), 1);
+    assert_eq!(
+        plan_created_outcome.hook_events[0].run.status,
+        HookRunStatus::Completed
+    );
+
+    let plan_updated_outcome = engine
+        .run_plan_lifecycle(PlanLifecycleRequest {
+            session_id: ThreadId::new(),
+            turn_id: "turn-1".to_string(),
+            cwd: cwd.clone(),
+            transcript_path: None,
+            model: "gpt-test".to_string(),
+            permission_mode: "default".to_string(),
+            event_name: HookEventName::PlanUpdated,
+            plan_source: "external".to_string(),
+            explanation: Some("patched".to_string()),
+            plan: vec![PlanItemArg {
+                step: "ship".to_string(),
+                status: StepStatus::Completed,
+            }],
+            previous_plan: Some(plan),
+            plan_text: None,
+        })
+        .await;
+    assert_eq!(plan_updated_outcome.hook_events.len(), 1);
+    assert_eq!(
+        plan_updated_outcome.hook_events[0].run.status,
+        HookRunStatus::Completed
+    );
+
+    let plan_completed_outcome = engine
+        .run_plan_lifecycle(PlanLifecycleRequest {
+            session_id: ThreadId::new(),
+            turn_id: "turn-1".to_string(),
+            cwd,
+            transcript_path: None,
+            model: "gpt-test".to_string(),
+            permission_mode: "default".to_string(),
+            event_name: HookEventName::PlanCompleted,
+            plan_source: "proposed_plan".to_string(),
+            explanation: None,
+            plan: Vec::new(),
+            previous_plan: None,
+            plan_text: Some("1. ship".to_string()),
+        })
+        .await;
+    assert_eq!(plan_completed_outcome.hook_events.len(), 1);
+    assert_eq!(
+        plan_completed_outcome.hook_events[0].run.status,
+        HookRunStatus::Completed
+    );
+
+    let log_contents = fs::read_to_string(log_path).expect("read lifecycle hook log");
+    let payloads = log_contents
+        .lines()
+        .map(|line| serde_json::from_str::<serde_json::Value>(line).expect("valid hook payload"))
+        .collect::<Vec<_>>();
+    assert_eq!(payloads.len(), 5);
+    assert_eq!(payloads[0]["hook_event_name"], "TaskCreated");
+    assert_eq!(payloads[0]["task_kind"], "regular");
+    assert_eq!(payloads[1]["hook_event_name"], "TaskCompleted");
+    assert_eq!(payloads[1]["last_agent_message"], "done");
+    assert_eq!(payloads[1]["duration_ms"], 456);
+    assert_eq!(payloads[2]["hook_event_name"], "PlanCreated");
+    assert_eq!(payloads[2]["plan_source"], "update_plan");
+    assert_eq!(payloads[2]["in_progress_step_count"], 1);
+    assert_eq!(payloads[3]["hook_event_name"], "PlanUpdated");
+    assert_eq!(payloads[3]["plan_source"], "external");
+    assert_eq!(payloads[3]["completed_step_count"], 1);
+    assert_eq!(payloads[4]["hook_event_name"], "PlanCompleted");
+    assert_eq!(payloads[4]["plan_source"], "proposed_plan");
+    assert_eq!(payloads[4]["plan_text"], "1. ship");
 }
 
 #[tokio::test]

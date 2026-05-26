@@ -23,6 +23,10 @@ use crate::session::TurnInputQueue;
 use crate::session::turn_context::TurnContext;
 use crate::tasks::AnySessionTask;
 use codex_protocol::models::AdditionalPermissionProfile;
+use codex_protocol::plan_tool::ExternalPlanUpdateOperation;
+use codex_protocol::plan_tool::PlanItemArg;
+use codex_protocol::plan_tool::StepStatus;
+use codex_protocol::plan_tool::UpdatePlanArgs;
 use codex_protocol::protocol::ReviewDecision;
 use codex_protocol::protocol::TokenUsage;
 
@@ -30,6 +34,7 @@ use codex_protocol::protocol::TokenUsage;
 pub(crate) struct ActiveTurn {
     pub(crate) tasks: IndexMap<String, RunningTask>,
     pub(crate) turn_state: Arc<Mutex<TurnState>>,
+    pub(crate) pending_turn_context: Option<Arc<TurnContext>>,
 }
 
 /// Whether mailbox deliveries should still be folded into the current turn.
@@ -58,6 +63,7 @@ impl Default for ActiveTurn {
         Self {
             tasks: IndexMap::new(),
             turn_state: Arc::new(Mutex::new(TurnState::default())),
+            pending_turn_context: None,
         }
     }
 }
@@ -82,6 +88,7 @@ pub(crate) struct RunningTask {
 }
 
 pub(crate) struct RemovedTask {
+    pub(crate) kind: TaskKind,
     pub(crate) records_turn_token_usage_on_span: bool,
     pub(crate) active_turn_is_empty: bool,
 }
@@ -89,6 +96,13 @@ pub(crate) struct RemovedTask {
 impl ActiveTurn {
     pub(crate) fn add_task(&mut self, task: RunningTask) {
         let sub_id = task.turn_context.sub_id.clone();
+        if self
+            .pending_turn_context
+            .as_ref()
+            .is_some_and(|turn_context| turn_context.sub_id == sub_id)
+        {
+            self.pending_turn_context = None;
+        }
         self.tasks.insert(sub_id, task);
     }
 
@@ -97,6 +111,7 @@ impl ActiveTurn {
         let records_turn_token_usage_on_span = task.task.records_turn_token_usage_on_span();
         task.handle.detach();
         Some(RemovedTask {
+            kind: task.kind,
             records_turn_token_usage_on_span,
             active_turn_is_empty: self.tasks.is_empty(),
         })
@@ -116,12 +131,23 @@ pub(crate) struct TurnState {
     pending_elicitations: HashMap<(String, RequestId), oneshot::Sender<ElicitationResponse>>,
     pending_dynamic_tools: HashMap<String, oneshot::Sender<DynamicToolResponse>>,
     pub(crate) pending_input: TurnInputQueue,
+    current_plan: Option<UpdatePlanArgs>,
+    plan_completed_hook_emitted: bool,
     mailbox_delivery_phase: MailboxDeliveryPhase,
     granted_permissions: Option<AdditionalPermissionProfile>,
     strict_auto_review_enabled: bool,
     pub(crate) tool_calls: u64,
     pub(crate) has_memory_citation: bool,
     pub(crate) token_usage_at_turn_start: TokenUsage,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct PlanLifecycleTransition {
+    pub(crate) created: bool,
+    pub(crate) updated: bool,
+    pub(crate) completed: bool,
+    pub(crate) previous_plan: Option<Vec<PlanItemArg>>,
+    pub(crate) current_plan: UpdatePlanArgs,
 }
 
 pub(crate) struct PendingRequestPermissions {
@@ -152,6 +178,72 @@ impl TurnState {
         self.pending_user_input.clear();
         self.pending_elicitations.clear();
         self.pending_dynamic_tools.clear();
+    }
+
+    pub(crate) fn apply_plan_snapshot(
+        &mut self,
+        update: UpdatePlanArgs,
+    ) -> PlanLifecycleTransition {
+        let created = self.current_plan.is_none();
+        let previous_plan = self.current_plan.as_ref().map(|plan| plan.plan.clone());
+        let completed = plan_is_completed(&update.plan) && !self.plan_completed_hook_emitted;
+        if completed {
+            self.plan_completed_hook_emitted = true;
+        }
+        self.current_plan = Some(update.clone());
+        PlanLifecycleTransition {
+            created,
+            updated: true,
+            completed,
+            previous_plan,
+            current_plan: update,
+        }
+    }
+
+    pub(crate) fn apply_external_plan_update(
+        &mut self,
+        explanation: Option<String>,
+        operations: Vec<ExternalPlanUpdateOperation>,
+    ) -> Result<PlanLifecycleTransition, String> {
+        if operations.is_empty() {
+            return Err("operations must not be empty".to_string());
+        }
+        let mut next = self.current_plan.clone().unwrap_or(UpdatePlanArgs {
+            explanation: None,
+            plan: Vec::new(),
+        });
+        if explanation.is_some() {
+            next.explanation = explanation;
+        }
+        for operation in operations {
+            match operation {
+                ExternalPlanUpdateOperation::Append { step, status } => {
+                    next.plan.push(PlanItemArg {
+                        step,
+                        status: status.unwrap_or(StepStatus::Pending),
+                    });
+                }
+                ExternalPlanUpdateOperation::Update {
+                    index,
+                    step,
+                    status,
+                } => {
+                    let Some(item) = next.plan.get_mut(index) else {
+                        return Err(format!("plan item index {index} is out of range"));
+                    };
+                    if item.status == StepStatus::Completed {
+                        return Err(format!("plan item index {index} is already completed"));
+                    }
+                    if let Some(step) = step {
+                        item.step = step;
+                    }
+                    if let Some(status) = status {
+                        item.status = status;
+                    }
+                }
+            }
+        }
+        Ok(self.apply_plan_snapshot(next))
     }
 
     pub(crate) fn insert_pending_request_permissions(
@@ -246,5 +338,104 @@ impl TurnState {
 
     pub(crate) fn strict_auto_review_enabled(&self) -> bool {
         self.strict_auto_review_enabled
+    }
+}
+
+fn plan_is_completed(plan: &[PlanItemArg]) -> bool {
+    !plan.is_empty() && plan.iter().all(|item| item.status == StepStatus::Completed)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn external_plan_update_appends_and_updates_open_items() {
+        let mut state = TurnState::default();
+        let created = state
+            .apply_external_plan_update(
+                Some("initial".to_string()),
+                vec![ExternalPlanUpdateOperation::Append {
+                    step: "draft patch".to_string(),
+                    status: None,
+                }],
+            )
+            .expect("append should work");
+        assert!(created.created);
+        assert!(created.updated);
+        assert!(!created.completed);
+        assert_eq!(created.current_plan.plan[0].status, StepStatus::Pending);
+
+        let updated = state
+            .apply_external_plan_update(
+                None,
+                vec![ExternalPlanUpdateOperation::Update {
+                    index: 0,
+                    step: Some("ship patch".to_string()),
+                    status: Some(StepStatus::InProgress),
+                }],
+            )
+            .expect("update should work");
+        assert!(!updated.created);
+        assert_eq!(
+            updated.previous_plan.expect("previous plan")[0].step,
+            "draft patch"
+        );
+        assert_eq!(updated.current_plan.plan[0].step, "ship patch");
+        assert_eq!(updated.current_plan.plan[0].status, StepStatus::InProgress);
+    }
+
+    #[test]
+    fn external_plan_update_rejects_completed_items_without_mutating() {
+        let mut state = TurnState::default();
+        state.apply_plan_snapshot(UpdatePlanArgs {
+            explanation: None,
+            plan: vec![PlanItemArg {
+                step: "done".to_string(),
+                status: StepStatus::Completed,
+            }],
+        });
+
+        let error = state
+            .apply_external_plan_update(
+                None,
+                vec![ExternalPlanUpdateOperation::Update {
+                    index: 0,
+                    step: Some("rewrite history".to_string()),
+                    status: Some(StepStatus::Pending),
+                }],
+            )
+            .expect_err("completed item cannot be changed");
+        assert_eq!(error, "plan item index 0 is already completed");
+        assert_eq!(
+            state.current_plan.as_ref().expect("plan").plan[0].step,
+            "done"
+        );
+        assert_eq!(
+            state.current_plan.as_ref().expect("plan").plan[0].status,
+            StepStatus::Completed
+        );
+    }
+
+    #[test]
+    fn completed_plan_transition_fires_once() {
+        let mut state = TurnState::default();
+        let first = state.apply_plan_snapshot(UpdatePlanArgs {
+            explanation: None,
+            plan: vec![PlanItemArg {
+                step: "finish".to_string(),
+                status: StepStatus::Completed,
+            }],
+        });
+        assert!(first.completed);
+
+        let second = state.apply_plan_snapshot(UpdatePlanArgs {
+            explanation: None,
+            plan: vec![PlanItemArg {
+                step: "finish".to_string(),
+                status: StepStatus::Completed,
+            }],
+        });
+        assert!(!second.completed);
     }
 }

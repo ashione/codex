@@ -1215,11 +1215,12 @@ impl ProposedPlanItemState {
         }
     }
 
-    async fn start(&mut self, sess: &Session, turn_context: &TurnContext) {
+    async fn start(&mut self, sess: &Arc<Session>, turn_context: &Arc<TurnContext>) {
         if self.started || self.completed {
             return;
         }
         self.started = true;
+        sess.emit_proposed_plan_created(turn_context).await;
         let item = TurnItem::Plan(PlanItem {
             id: self.item_id.clone(),
             text: String::new(),
@@ -1227,7 +1228,12 @@ impl ProposedPlanItemState {
         sess.emit_turn_item_started(turn_context, &item).await;
     }
 
-    async fn push_delta(&mut self, sess: &Session, turn_context: &TurnContext, delta: &str) {
+    async fn push_delta(
+        &mut self,
+        sess: &Arc<Session>,
+        turn_context: &Arc<TurnContext>,
+        delta: &str,
+    ) {
         if self.completed {
             return;
         }
@@ -1246,14 +1252,16 @@ impl ProposedPlanItemState {
 
     async fn complete_with_text(
         &mut self,
-        sess: &Session,
-        turn_context: &TurnContext,
+        sess: &Arc<Session>,
+        turn_context: &Arc<TurnContext>,
         text: String,
     ) {
         if self.completed || !self.started {
             return;
         }
         self.completed = true;
+        sess.emit_proposed_plan_completed(turn_context, text.clone())
+            .await;
         let item = TurnItem::Plan(PlanItem {
             id: self.item_id.clone(),
             text,
@@ -1378,8 +1386,8 @@ pub(super) fn realtime_text_for_event(msg: &EventMsg) -> Option<String> {
 /// Normal text becomes AgentMessage deltas; plan content becomes PlanDelta +
 /// TurnItem::Plan.
 async fn handle_plan_segments(
-    sess: &Session,
-    turn_context: &TurnContext,
+    sess: &Arc<Session>,
+    turn_context: &Arc<TurnContext>,
     state: &mut PlanModeStreamState,
     item_id: &str,
     segments: Vec<ProposedPlanSegment>,
@@ -1441,8 +1449,8 @@ async fn handle_plan_segments(
 }
 
 async fn emit_streamed_assistant_text_delta(
-    sess: &Session,
-    turn_context: &TurnContext,
+    sess: &Arc<Session>,
+    turn_context: &Arc<TurnContext>,
     plan_mode_state: Option<&mut PlanModeStreamState>,
     item_id: &str,
     parsed: ParsedAssistantTextDelta,
@@ -1476,8 +1484,8 @@ async fn emit_streamed_assistant_text_delta(
 
 /// Flush buffered assistant text parser state when an assistant message item ends.
 async fn flush_assistant_text_segments_for_item(
-    sess: &Session,
-    turn_context: &TurnContext,
+    sess: &Arc<Session>,
+    turn_context: &Arc<TurnContext>,
     plan_mode_state: Option<&mut PlanModeStreamState>,
     parsers: &mut AssistantMessageStreamParsers,
     item_id: &str,
@@ -1488,8 +1496,8 @@ async fn flush_assistant_text_segments_for_item(
 
 /// Flush any remaining buffered assistant text parser state at response completion.
 async fn flush_assistant_text_segments_all(
-    sess: &Session,
-    turn_context: &TurnContext,
+    sess: &Arc<Session>,
+    turn_context: &Arc<TurnContext>,
     mut plan_mode_state: Option<&mut PlanModeStreamState>,
     parsers: &mut AssistantMessageStreamParsers,
 ) {
@@ -1507,8 +1515,8 @@ async fn flush_assistant_text_segments_all(
 
 /// Emit completion for plan items by parsing the finalized assistant message.
 async fn maybe_complete_plan_item_from_message(
-    sess: &Session,
-    turn_context: &TurnContext,
+    sess: &Arc<Session>,
+    turn_context: &Arc<TurnContext>,
     state: &mut PlanModeStreamState,
     item: &ResponseItem,
 ) {
@@ -1536,8 +1544,8 @@ async fn maybe_complete_plan_item_from_message(
 
 /// Emit a completed agent message in plan mode, respecting deferred starts.
 async fn emit_agent_message_in_plan_mode(
-    sess: &Session,
-    turn_context: &TurnContext,
+    sess: &Arc<Session>,
+    turn_context: &Arc<TurnContext>,
     agent_message: codex_protocol::items::AgentMessageItem,
     state: &mut PlanModeStreamState,
 ) {
@@ -1579,8 +1587,8 @@ async fn emit_agent_message_in_plan_mode(
 
 /// Emit completion for a plan-mode turn item, handling agent messages specially.
 async fn emit_turn_item_in_plan_mode(
-    sess: &Session,
-    turn_context: &TurnContext,
+    sess: &Arc<Session>,
+    turn_context: &Arc<TurnContext>,
     turn_item: TurnItem,
     previously_active_item: Option<&TurnItem>,
     state: &mut PlanModeStreamState,
@@ -1600,8 +1608,8 @@ async fn emit_turn_item_in_plan_mode(
 
 /// Handle a completed assistant response item in plan mode, returning true if handled.
 async fn handle_assistant_item_done_in_plan_mode(
-    sess: &Session,
-    turn_context: &TurnContext,
+    sess: &Arc<Session>,
+    turn_context: &Arc<TurnContext>,
     turn_store: &codex_extension_api::ExtensionData,
     item: &ResponseItem,
     state: &mut PlanModeStreamState,

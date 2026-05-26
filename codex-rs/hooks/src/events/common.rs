@@ -113,6 +113,11 @@ pub(crate) fn matcher_pattern_for_event(
         | HookEventName::SessionStart
         | HookEventName::SubagentStart
         | HookEventName::SubagentStop
+        | HookEventName::TaskCreated
+        | HookEventName::TaskCompleted
+        | HookEventName::PlanCreated
+        | HookEventName::PlanUpdated
+        | HookEventName::PlanCompleted
         | HookEventName::PreCompact
         | HookEventName::PostCompact => matcher,
         HookEventName::UserPromptSubmit | HookEventName::Stop => None,

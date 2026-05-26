@@ -722,6 +722,11 @@ fn hook_event_label(event_name: HookEventName) -> &'static str {
         HookEventName::UserPromptSubmit => "UserPromptSubmit",
         HookEventName::SubagentStart => "SubagentStart",
         HookEventName::SubagentStop => "SubagentStop",
+        HookEventName::TaskCreated => "TaskCreated",
+        HookEventName::TaskCompleted => "TaskCompleted",
+        HookEventName::PlanCreated => "PlanCreated",
+        HookEventName::PlanUpdated => "PlanUpdated",
+        HookEventName::PlanCompleted => "PlanCompleted",
         HookEventName::Stop => "Stop",
     }
 }

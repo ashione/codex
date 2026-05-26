@@ -738,6 +738,11 @@ fn event_label(event_name: HookEventName) -> &'static str {
         HookEventName::UserPromptSubmit => "UserPromptSubmit",
         HookEventName::SubagentStart => "SubagentStart",
         HookEventName::SubagentStop => "SubagentStop",
+        HookEventName::TaskCreated => "TaskCreated",
+        HookEventName::TaskCompleted => "TaskCompleted",
+        HookEventName::PlanCreated => "PlanCreated",
+        HookEventName::PlanUpdated => "PlanUpdated",
+        HookEventName::PlanCompleted => "PlanCompleted",
         HookEventName::Stop => "Stop",
     }
 }
@@ -753,6 +758,11 @@ fn event_description(event_name: HookEventName) -> &'static str {
         HookEventName::UserPromptSubmit => "When the user submits a prompt",
         HookEventName::SubagentStart => "When a subagent is created",
         HookEventName::SubagentStop => "Right before a subagent ends its turn",
+        HookEventName::TaskCreated => "When a task starts",
+        HookEventName::TaskCompleted => "Right before a task completes",
+        HookEventName::PlanCreated => "When a checklist plan is created",
+        HookEventName::PlanUpdated => "When a checklist plan changes",
+        HookEventName::PlanCompleted => "When a plan is completed",
         HookEventName::Stop => "Right before Codex ends its turn",
     }
 }
